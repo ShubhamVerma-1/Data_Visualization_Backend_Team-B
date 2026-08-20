@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from services.data_store import store
-from services.risk_scoring import risk_score_for
+from services.m1_risk_scoring import risk_score_for
 from models.schemas import Stats
 
 router = APIRouter()

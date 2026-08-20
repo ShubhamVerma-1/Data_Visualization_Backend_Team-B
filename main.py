@@ -17,9 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()  # picks up MONGO_URI etc. from .env if present
 
 from services.data_store import store
-from routes import events, stats, threats, threat_intel, vulnerabilities
+from routes import events, stats, threats, threat_intel, vulnerabilities, prediction_routes
 from database.mongo_db import mongo
-from database.seeder import seed_if_empty
+from database.seeder import seed_if_empty, seed_predictions_if_empty
+from database.prediction_store import ensure_indexes
 from utils.logger import get_logger
 
 log = get_logger("threat_dashboard")
@@ -35,9 +36,19 @@ async def lifespan(app: FastAPI):
     #    seed_if_empty() raises RuntimeError on any failure, which prevents the
     #    server from completing startup with a broken/partial database.
     seed_if_empty(mongo.get_database())
+    
+     # 2b. Auto-seed M2 predictions if empty (handles fresh Docker volumes)
+    seed_predictions_if_empty(mongo.get_database())
 
-    # 3. Cache the static MITRE mapping in memory (10 rows, never written to)
+    # 3. Ensure MongoDB indexes for threat_predictions collection
+    ensure_indexes()
+
+    # 4. Cache the static MITRE mapping in memory (10 rows, never written to)
     store.load()
+
+    # 5. Load production ML model artifacts into memory singletons
+    from ml.model_loader import get_loaded_models
+    get_loaded_models()
 
     yield
 
@@ -47,8 +58,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Threat Detection Dashboard API",
-    description="Backend for the AI-Assisted Threat Detection Dashboard — Milestone 1",
-    version="1.0.0",
+    description="Backend for the AI-Assisted Threat Detection Dashboard — Milestone 1 & 2",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -72,6 +83,7 @@ app.include_router(stats.router, tags=["Stats"])
 app.include_router(threats.router, tags=["Threats"])
 app.include_router(threat_intel.router, tags=["Threat Intelligence"])
 app.include_router(vulnerabilities.router, tags=["Vulnerabilities"])
+app.include_router(prediction_routes.router, tags=["Predictions"])
 
 
 @app.get("/", tags=["Health"])

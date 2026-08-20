@@ -89,3 +89,49 @@ def seed_if_empty(db) -> None:
             db[coll_name].create_index([(field, direction)])
 
     log.info("Initialization complete. All datasets loaded successfully.")
+
+
+def seed_predictions_if_empty(db) -> None:
+    """
+    Idempotent M2 prediction seeder — safe to call on every startup.
+
+    Checks if threat_predictions is empty. If so, runs populate_all_predictions.py
+    as a subprocess (~2 seconds for 10,000 events). No-op on subsequent startups.
+    Raises RuntimeError on failure to prevent a broken startup.
+    """
+    existing = db["threat_predictions"].count_documents({})
+
+    if existing >= 10000:
+        log.info(
+            f"threat_predictions already populated ({existing:,} docs). "
+            "Skipping M2 prediction seed."
+        )
+        return
+
+    log.info(
+        "threat_predictions is empty — running M2 batch prediction "
+        "population (~2s)..."
+    )
+
+    import subprocess
+    import sys
+
+    script = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "populate_all_predictions.py",
+    )
+
+    proc = subprocess.run(
+        [sys.executable, script],
+        capture_output=True,
+        text=True,
+    )
+
+    if proc.returncode != 0:
+        log.error(f"Prediction population failed:\n{proc.stderr[-800:]}")
+        raise RuntimeError(
+            "Failed to auto-populate threat_predictions at startup. "
+            "Run populate_all_predictions.py manually to diagnose."
+        )
+
+    log.info("M2 batch prediction population complete.")    
