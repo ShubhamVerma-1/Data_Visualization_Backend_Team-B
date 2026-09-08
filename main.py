@@ -1,5 +1,5 @@
 """
-AI-Assisted Threat Detection Dashboard — Backend API (Milestone 1)
+AI-Assisted Threat Detection Dashboard — Backend API (Milestones 1–3)
 
 Preferred start:
     python run.py
@@ -17,10 +17,20 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()  # picks up MONGO_URI etc. from .env if present
 
 from services.data_store import store
-from routes import events, stats, threats, threat_intel, vulnerabilities, prediction_routes
+from routes import (
+    events,
+    stats,
+    threats,
+    threat_intel,
+    vulnerabilities,
+    prediction_routes,
+    risk_routes,
+    incident_routes,
+)
 from database.mongo_db import mongo
-from database.seeder import seed_if_empty, seed_predictions_if_empty
+from database.seeder import seed_if_empty, seed_predictions_if_empty, seed_incidents_if_empty
 from database.prediction_store import ensure_indexes
+from database.incident_repository import ensure_incident_indexes
 from utils.logger import get_logger
 
 log = get_logger("threat_dashboard")
@@ -37,11 +47,15 @@ async def lifespan(app: FastAPI):
     #    server from completing startup with a broken/partial database.
     seed_if_empty(mongo.get_database())
     
-     # 2b. Auto-seed M2 predictions if empty (handles fresh Docker volumes)
+    # 2b. Auto-seed M2 predictions if empty (handles fresh Docker volumes)
     seed_predictions_if_empty(mongo.get_database())
 
-    # 3. Ensure MongoDB indexes for threat_predictions collection
+    # 2c. Auto-seed M3 incidents if empty
+    seed_incidents_if_empty(mongo.get_database())
+
+    # 3. Ensure MongoDB indexes for threat_predictions and incidents collections
     ensure_indexes()
+    ensure_incident_indexes()
 
     # 4. Cache the static MITRE mapping in memory (10 rows, never written to)
     store.load()
@@ -57,9 +71,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Threat Detection Dashboard API",
-    description="Backend for the AI-Assisted Threat Detection Dashboard — Milestone 1 & 2",
-    version="2.0.0",
+    title="AI-Assisted Threat Detection Dashboard API",
+    description="Backend for the AI-Assisted Threat Detection Dashboard — Milestones 1–3",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -74,7 +88,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -84,6 +98,8 @@ app.include_router(threats.router, tags=["Threats"])
 app.include_router(threat_intel.router, tags=["Threat Intelligence"])
 app.include_router(vulnerabilities.router, tags=["Vulnerabilities"])
 app.include_router(prediction_routes.router, tags=["Predictions"])
+app.include_router(risk_routes.router)
+app.include_router(incident_routes.router)
 
 
 @app.get("/", tags=["Health"])

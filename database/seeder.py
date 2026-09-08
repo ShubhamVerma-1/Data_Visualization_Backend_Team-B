@@ -135,3 +135,36 @@ def seed_predictions_if_empty(db) -> None:
         )
 
     log.info("M2 batch prediction population complete.")    
+
+
+def seed_incidents_if_empty(db) -> None:
+    """
+    Idempotent M3 incident seeder — safe to call on every startup.
+
+    Checks if incidents collection is empty. If so, runs populate_incidents()
+    from populate_all_incidents.py to generate incidents. No-op on subsequent startups.
+    """
+    existing = db["incidents"].count_documents({})
+
+    if existing > 0:
+        log.info(
+            f"incidents already populated ({existing:,} docs). "
+            "Skipping M3 incident seed."
+        )
+        return
+
+    log.info(
+        "incidents collection is empty — running M3 batch incident "
+        "population..."
+    )
+
+    try:
+        from populate_all_incidents import populate_incidents
+        populate_incidents(force_recreate=False)
+        log.info("M3 batch incident population complete.")
+    except Exception as e:
+        log.error(f"Incident population failed: {e}", exc_info=True)
+        raise RuntimeError(
+            "Failed to auto-populate incidents at startup. "
+            "Run populate_all_incidents.py manually to diagnose."
+        )
